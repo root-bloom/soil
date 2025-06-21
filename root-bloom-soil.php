@@ -32,6 +32,7 @@ remove_action('welcome_panel', 'wp_welcome_panel');
 remove_action('template_redirect', 'rest_output_link_header');
 
 // clean up head
+
 remove_action('wp_print_styles', 'print_emoji_styles');
 remove_action('admin_print_styles', 'print_emoji_styles');
 remove_action('admin_print_scripts', 'print_emoji_detection_script');
@@ -53,7 +54,6 @@ remove_action('wp_head', 'wp_shortlink_wp_head');
 remove_action('wp_head', 'wp_oembed_add_discovery_links');
 remove_action('wp_head', 'rest_output_link_wp_head');
 
-// remove yoast helper classname 
 add_action('wp_head', function () {
     ob_start(function ($o) {
         $o = str_replace('class="yoast-schema-graph"', '', $o);
@@ -61,18 +61,8 @@ add_action('wp_head', function () {
     });
 }, ~PHP_INT_MAX);
 
-// set our logo in the editor instead of wordpress
 add_action('admin_head', function () {
-	echo '<style>
-	.edit-post-header .edit-post-fullscreen-mode-close svg {display:none;}
-	.edit-post-header .edit-post-fullscreen-mode-close::before {
-		background-image: url("/wp-content/mu-plugins/root-bloom-soil/logo.svg");
-		background-repeat: no-repeat;
-		background-position: center center;
-		background-size: contain;
-		box-shadow: none;
-	}
-
+    echo '<style>
 	.editor-styles-wrapper .edit-post-visual-editor__post-title-wrapper { margin: 0 0 2rem 0 !important; padding: 1rem; border-bottom: 1px solid currentColor; }
 	.editor-styles-wrapper h1 { padding: 0.5rem; margin: 0; font-size: 1.5rem; }
 	</style>';
@@ -82,16 +72,7 @@ remove_action('wp_body_open', 'wp_global_styles_render_svg_filters');
 add_filter('rss_widget_feed_link', '__return_false');
 
 // disable comments
-add_filter('comments_open', '__return_false', 20, 2);
-add_filter('pings_open', '__return_false', 20, 2);
-add_filter('comments_array', '__return_empty_array', 10, 2);
 remove_action('admin_bar_menu', 'wp_admin_bar_comments_menu');
-add_filter('comments_open', '__return_false', ~PHP_INT_MAX);
-
-foreach (get_post_types() as $type) {
-    remove_post_type_support($type, 'comments');
-    remove_post_type_support($type, 'trackbacks');
-}
 
 add_action('admin_init', function () {
     // Redirect any user trying to access comments page
@@ -107,6 +88,10 @@ add_action('admin_init', function () {
 
     // Disable support for comments and trackbacks in post types
     foreach (get_post_types() as $post_type) {
+        if ($post_type === 'product') {
+            continue;
+        }
+
         if (post_type_supports($post_type, 'comments')) {
             remove_post_type_support($post_type, 'comments');
             remove_post_type_support($post_type, 'trackbacks');
@@ -114,18 +99,17 @@ add_action('admin_init', function () {
     }
 });
 
-// remove comments from admin bar
 add_action('wp_before_admin_bar_render', function () {
     global $wp_admin_bar;
     $wp_admin_bar->remove_menu('comments');
 });
 
-// remove comments page in menu
+// Remove comments page in menu
 add_action('admin_menu', function () {
     remove_menu_page('edit-comments.php');
 });
 
-// modernize theme
+// modernize team
 add_action('after_setup_theme', function () {
     /**
      * Enable plugins to manage the document title.
@@ -147,10 +131,23 @@ add_action('after_setup_theme', function () {
 });
 
 // parse a block template part via a custom helper
-if (!function_exists('rb_get_block_template')) {
-    function rb_get_block_template($part)
+if (!function_exists('rb_get_block_template_object')) {
+    function rb_get_block_template_object($slug)
     {
-        $template_part = get_block_template(get_stylesheet() . '//' . $part, 'wp_template_part');
+        $template_part = get_block_template(sprintf('%s//%s', get_stylesheet(), $slug), 'wp_template_part');
+        if (!$template_part || empty($template_part->content)) {
+            return false;
+        }
+
+        return $template_part;
+    }
+}
+
+// parse a block template part via a custom helper
+if (!function_exists('rb_get_block_template')) {
+    function rb_get_block_template($slug)
+    {
+        $template_part = rb_get_block_template_object($slug);
         if (!$template_part || empty($template_part->content)) {
             return;
         }
@@ -214,11 +211,17 @@ add_action('save_post', function ($post_id) {
     }
 
     $post = get_post($post_id);
-
     if (str_contains($post->post_name, 'autosave') || str_contains($post->post_name, 'revision') || str_contains($post->post_name, 'trashed')) {
         return;
     }
 
-    $path = sprintf('%s/wp-%s.html', $path, $post->post_name);
-    file_put_contents($path, $post->post_content);
+    $content = $post->post_content;
+    $content = str_replace('http://localhost:3000/', '/', $content);
+    $content = str_replace('http://localhost:8080/', '/', $content);
+
+    if (empty($content)) {
+        return;
+    }
+
+    file_put_contents(sprintf('%s/%s__%s.html', $path, $post->post_type, $post->post_name), $content);
 });
